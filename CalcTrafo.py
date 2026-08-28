@@ -43,7 +43,7 @@ KW = 0.40                  # criterio de diseño (clase: transformador común 0.
 GAP_OPTIONS_MM = [0.0, 0.1, 0.2, 0.3, 0.4]
 
 # Completar con los diámetros REALES disponibles en el pañol.
-WIRE_DIAMETERS_MM = []
+WIRE_DIAMETERS_MM = [0.2, 0.3, 0.45, 0.5, 0.6]
 
 # Supuestos opcionales para modelo equivalente
 K_COUPLING_EST = 0.97      # SOLO estimación; reemplazar por medición
@@ -55,15 +55,17 @@ def al_with_gap(gap_mm):
     g = gap_mm * 1e-3
     if g == 0:
         return AL0
-    return 1.0 / (1.0/AL0 + g/(MU0*AE))
+    return 1.0 / (1.0/AL0 + 2*g/(MU0*AE))
 
 
 def flux_components(N1, gap_mm, idc):
+    T= 1/F
     """Bac es amplitud AC; Bdc es el corrimiento por IDC; Bmax = Bac + Bdc."""
     AL = al_with_gap(gap_mm)
-    bac = VIN*D/(2*F*N1*AMIN)
+    bac = 1/2 * VIN*D*T / (N1*AMIN)
     bdc = N1*idc*AL/AMIN
     return bac, bdc, bac+bdc
+    
 
 
 def choose_turns_and_gap():
@@ -110,7 +112,7 @@ def conductor_targets(N1, N2):
     return aw_section, copper_area_section, s1_total, s2_each, d1_equiv, d2
 
 
-def suggest_wire_combo(target_area_mm2, diameters, max_strands=20):
+def suggest_wire_combo(sec_min, target_area_mm2, diameters, max_strands=20):
     """
     Sugiere combinación de hilos en paralelo.
     Cada hilo debe cumplir d/2 <= skin depth.
@@ -126,7 +128,7 @@ def suggest_wire_combo(target_area_mm2, diameters, max_strands=20):
         area_one = pi*d*d/4
         for n in range(1, max_strands+1):
             area = n*area_one
-            if area >= target_area_mm2:
+            if ((area >= target_area_mm2)& (area >= sec_min)):
                 excess = area-target_area_mm2
                 cand = (excess, n, d, area)
                 if best is None or cand < best:
@@ -148,6 +150,8 @@ def main():
     delta_i_pp = VIN*ton/Lm
     iac_rms = (delta_i_pp/2)/sqrt(3)
     i1_base_rms = sqrt(IDC_NOM**2 + iac_rms**2)
+    s1_min = (IDC_NOM*(1+IDC_TOL) + (delta_i_pp/2))/J
+    s2_min = s1_min*RATIO_N2_N1**2/N_SECONDARIES
 
     v_off_mag = VIN*D/(1-D)
     v1_rms = sqrt(D*VIN**2 + (1-D)*v_off_mag**2)
@@ -211,8 +215,8 @@ def main():
     print(f"Skin depth δ ≈ {delta:.3f} mm -> diámetro individual recomendado <= {max_d_skin:.3f} mm")
     print(f"Área máxima por hilo circular para r<=δ ≈ {max_s_skin:.3f} mm²")
 
-    pcombo = suggest_wire_combo(s1, WIRE_DIAMETERS_MM)
-    scombo = suggest_wire_combo(s2, WIRE_DIAMETERS_MM)
+    pcombo = suggest_wire_combo(s1_min, s1, WIRE_DIAMETERS_MM)
+    scombo = suggest_wire_combo(s2_min, s2, WIRE_DIAMETERS_MM)
     if pcombo:
         _, n, d, area = pcombo
         print(f"Sugerencia primario con pañol: {n} x Ø{d:.3f} mm = {area:.3f} mm²")
@@ -231,13 +235,13 @@ def main():
     print(f"R2,dc objetivo por secundario ≈ {r2_target:.4f} ohm")
     print(f"AR datasheet (sin corregir reparto de ventana): R1={AR*N1**2:.4f} ohm, R2={AR*N2**2:.4f} ohm")
 
-    print("\n=== MODELO EQUIVALENTE (PARTE ESTIMADA) ===")
-    print(f"k supuesto = {K_COUPLING_EST:.3f}")
-    print(f"M estimada ≈ {M*1e6:.2f} uH")
-    print(f"Ldispersión primaria estimada ≈ {Lsigma1_est*1e6:.2f} uH")
-    print(f"Pcore típica estimada ≈ {pcore_est*1e3:.1f} mW")
-    print(f"Rp referida al primario ≈ {rp_est/1e3:.1f} kohm")
-    print("ATENCIÓN: k, Ldispersión y Pcore deben validarse/ajustarse con medición o datos más específicos.")
+    #print("\n=== MODELO EQUIVALENTE (PARTE ESTIMADA) ===")
+    #print(f"k supuesto = {K_COUPLING_EST:.3f}")
+    #print(f"M estimada ≈ {M*1e6:.2f} uH")
+    #print(f"Ldispersión primaria estimada ≈ {Lsigma1_est*1e6:.2f} uH")
+    #print(f"Pcore típica estimada ≈ {pcore_est*1e3:.1f} mW")
+    #print(f"Rp referida al primario ≈ {rp_est/1e3:.1f} kohm")
+    #print("ATENCIÓN: k, Ldispersión y Pcore deben validarse/ajustarse con medición o datos más específicos.")
 
     print("\n=== CANDIDATOS POR GAP (primer N exacto que cumple B) ===")
     for g, n1, n2, bm, lm in candidates:
